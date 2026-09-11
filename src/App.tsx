@@ -10,7 +10,6 @@ import {
   Move,
   Plus,
   RotateCw,
-  Ruler,
   Sparkles,
   Sun,
   X,
@@ -69,6 +68,8 @@ export default function App() {
     [rows, setRows] = useState(29);
   const [pitch, setPitch] = useState(5),
     [scale, setScale] = useState(readScale);
+  const [calibrationScale, setCalibrationScale] = useState(scale);
+  const calibrationUnit = pitch * calibrationScale;
   const [grid, setGrid] = useState(true),
     [beads, setBeads] = useState(false);
   const [opacity, setOpacity] = useState(100),
@@ -273,6 +274,8 @@ export default function App() {
   useEffect(() => {
     if (!calibrate) return;
     const previous = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setCalibrate(false);
       if (e.key === "Tab") {
@@ -293,6 +296,7 @@ export default function App() {
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previousOverflow;
       previous?.focus();
     };
   }, [calibrate]);
@@ -448,15 +452,17 @@ export default function App() {
               </div>
               <button
                 className="calibrate-button"
-                onClick={() => setCalibrate(true)}
+                onClick={() => {
+                  setCalibrationScale(scale);
+                  setCalibrate(true);
+                }}
               >
-                <Ruler size={18} />
+                <Grid2X2 size={18} />
                 {calibrated ? "Recalibrate screen" : "Calibrate screen"}
                 <span>{calibrated ? <Check size={15} /> : "↗"}</span>
               </button>
               <p className="help">
-                One quick ruler check makes your pattern match the real-life
-                size of your board.
+                Place your board on the screen and match the dots to its pegs.
               </p>
             </section>
             <section>
@@ -660,80 +666,127 @@ export default function App() {
         </>
       )}
       {calibrate && (
-        <div className="modal-shade">
+        <div className="calibration-shade">
           <div
             ref={modalRef}
-            className="modal"
+            className="calibration-panel"
             role="dialog"
             aria-modal="true"
             aria-labelledby="calibration-title"
           >
-            <button
-              autoFocus
-              className="close"
-              aria-label="Close calibration"
-              onClick={() => setCalibrate(false)}
-            >
-              <X size={20} />
-            </button>
-            <span className="modal-icon">
-              <Ruler size={28} />
-            </span>
-            <div className="eyebrow">LET’S GET THE SIZE JUST RIGHT</div>
-            <h2 id="calibration-title">A ruler, and a little adjustment.</h2>
-            <p>
-              Place a ruler against your screen. Adjust the line below until it
-              measures exactly <strong>50 mm (5 cm)</strong>.
-            </p>
-            <div className="ruler-space">
-              <div className="ruler" style={{ width: 50 * scale }}>
-                <span>0</span>
-                <span>50 mm</span>
+            <div className="calibration-heading">
+              <button
+                autoFocus
+                className="close"
+                aria-label="Close calibration"
+                onClick={() => setCalibrate(false)}
+              >
+                <X size={20} />
+              </button>
+              <div className="eyebrow">CALIBRATE WITH YOUR BOARD</div>
+              <h2 id="calibration-title">Line up the pegs.</h2>
+              <p>
+                Place your clear {cols} × {rows} board on the screen. Align its
+                top-left peg with the coral dot, then adjust the spacing until
+                the dots match the peg centers across rows and columns.
+              </p>
+            </div>
+            <div className="calibration-stage">
+              <svg
+                className="calibration-grid"
+                width={(cols - 1) * calibrationUnit + 24}
+                height={(rows - 1) * calibrationUnit + 24}
+                role="img"
+                aria-label={`${cols} by ${rows} calibration dots. The coral dot marks the top-left peg.`}
+              >
+                {Array.from({ length: rows }, (_, y) => (
+                  <line
+                    key={`row-${y}`}
+                    x1={12}
+                    y1={12 + y * calibrationUnit}
+                    x2={12 + (cols - 1) * calibrationUnit}
+                    y2={12 + y * calibrationUnit}
+                    stroke="#e0e5d7"
+                  />
+                ))}
+                {Array.from({ length: cols }, (_, x) => (
+                  <line
+                    key={`col-${x}`}
+                    x1={12 + x * calibrationUnit}
+                    y1={12}
+                    x2={12 + x * calibrationUnit}
+                    y2={12 + (rows - 1) * calibrationUnit}
+                    stroke="#e0e5d7"
+                  />
+                ))}
+                {Array.from({ length: cols * rows }, (_, i) => (
+                  <circle
+                    key={i}
+                    cx={12 + (i % cols) * calibrationUnit}
+                    cy={12 + Math.floor(i / cols) * calibrationUnit}
+                    r={i === 0 ? 4 : 2.5}
+                    fill={i === 0 ? "#c96b62" : "#36563e"}
+                  />
+                ))}
+                <circle cx={12} cy={12} r={8} fill="none" stroke="#c96b62" />
+              </svg>
+            </div>
+            <div className="calibration-footer">
+              <label className="range-label" htmlFor="calibration-spacing">
+                <span>Peg spacing</span>
+                <span>Smaller ↔ Larger</span>
+              </label>
+              <div className="scale-controls">
+                <button
+                  aria-label="Decrease calibration"
+                  onClick={() =>
+                    setCalibrationScale(
+                      Math.max(2, +(calibrationScale - 0.01).toFixed(2)),
+                    )
+                  }
+                >
+                  <Minus size={18} />
+                </button>
+                <input
+                  id="calibration-spacing"
+                  aria-label="Calibration peg spacing"
+                  type="range"
+                  min="2"
+                  max="12"
+                  step="0.01"
+                  value={calibrationScale}
+                  onChange={(e) => setCalibrationScale(+e.target.value)}
+                />
+                <button
+                  aria-label="Increase calibration"
+                  onClick={() =>
+                    setCalibrationScale(
+                      Math.min(12, +(calibrationScale + 0.01).toFixed(2)),
+                    )
+                  }
+                >
+                  <Plus size={18} />
+                </button>
               </div>
-            </div>
-            <div className="scale-controls">
+              <p className="help">
+                Match peg centers, not board edges. If the whole board doesn’t
+                fit, match as many visible pegs as possible. Recalibrate after
+                changing browser zoom or devices.
+              </p>
               <button
-                aria-label="Decrease calibration"
-                onClick={() =>
-                  setScale(Math.max(2, +(scale - 0.01).toFixed(2)))
-                }
+                className="primary"
+                onClick={() => {
+                  setScale(calibrationScale);
+                  setCalibrated(true);
+                  try {
+                    localStorage.setItem("peg-pixel-calibrated", "yes");
+                  } catch {}
+                  setCalibrate(false);
+                }}
               >
-                <Minus size={18} />
-              </button>
-              <input
-                aria-label="Screen calibration"
-                type="range"
-                min="2"
-                max="12"
-                step="0.01"
-                value={scale}
-                onChange={(e) => setScale(+e.target.value)}
-              />
-              <button
-                aria-label="Increase calibration"
-                onClick={() =>
-                  setScale(Math.min(12, +(scale + 0.01).toFixed(2)))
-                }
-              >
-                <Plus size={18} />
+                <Check size={18} /> Pegs line up · Save calibration
               </button>
             </div>
-            <p className="help">
-              Then check that the dots line up with your board’s pegs.
-              Recalibrate if you change browser zoom or devices.
-            </p>
-            <button
-              className="primary"
-              onClick={() => {
-                setCalibrated(true);
-                try {
-                  localStorage.setItem("peg-pixel-calibrated", "yes");
-                } catch {}
-                setCalibrate(false);
-              }}
-            >
-              <Check size={18} /> Looks right · Save calibration
-            </button>
           </div>
         </div>
       )}
