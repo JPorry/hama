@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { detectChartGrid, sampleChart } from "./pattern-import";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   ChevronDown,
@@ -64,6 +65,7 @@ function readScale() {
 export default function App() {
   const [pattern, setPattern] = useState<Pattern>(demo);
   const [source, setSource] = useState<HTMLImageElement | null>(null);
+  const [importMode, setImportMode] = useState("auto");
   const [cols, setCols] = useState(29),
     [rows, setRows] = useState(29);
   const [pitch, setPitch] = useState(5),
@@ -94,6 +96,23 @@ export default function App() {
   );
   const hold = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unit = pitch * scale;
+  const analyzed = useMemo(() => {
+    if (!source) return null;
+    const canvas = document.createElement("canvas");
+    const ratio = Math.min(
+      1,
+      1600 / Math.max(source.naturalWidth, source.naturalHeight),
+    );
+    canvas.width = Math.max(1, Math.round(source.naturalWidth * ratio));
+    canvas.height = Math.max(1, Math.round(source.naturalHeight * ratio));
+    const context = canvas.getContext("2d")!;
+    context.drawImage(source, 0, 0, canvas.width, canvas.height);
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+    return { pixels, grid: detectChartGrid(pixels) };
+  }, [source]);
+  const chart = importMode === "auto" ? analyzed?.grid : null;
+  const chartTooLarge =
+    !!chart && (chart.x.length - 1 > cols || chart.y.length - 1 > rows);
   useEffect(() => {
     if (!source) {
       const colors = Array.from(
@@ -105,6 +124,15 @@ export default function App() {
           ],
       );
       setPattern({ ...demo, width: cols, height: rows, colors });
+      return;
+    }
+    if (chart && analyzed) {
+      setPattern((p) => ({
+        ...p,
+        width: cols,
+        height: rows,
+        colors: sampleChart(analyzed.pixels, chart, cols, rows),
+      }));
       return;
     }
     const canvas = document.createElement("canvas");
@@ -132,7 +160,7 @@ export default function App() {
         : `rgb(${data[i * 4]}, ${data[i * 4 + 1]}, ${data[i * 4 + 2]})`,
     );
     setPattern((p) => ({ ...p, width: cols, height: rows, colors }));
-  }, [source, cols, rows]);
+  }, [source, cols, rows, analyzed, chart]);
   useEffect(() => {
     try {
       localStorage.setItem("peg-pixel-scale", String(scale));
@@ -262,6 +290,7 @@ export default function App() {
       URL.revokeObjectURL(url);
       setPattern((p) => ({ ...p, name: file.name.replace(/\.[^.]+$/, "") }));
       setSource(img);
+      setImportMode("auto");
       setRotation(0);
       setOffset({ x: 0, y: 0 });
     };
@@ -389,12 +418,46 @@ export default function App() {
                   <strong>{pattern.name}</strong>
                   <small>
                     {source
-                      ? "Your image · fitted to board"
+                      ? chart
+                        ? `${chart.x.length - 1} × ${chart.y.length - 1} chart · one cell per bead`
+                        : "Pixel image · fitted to board"
                       : "Example pattern · try it out"}
                   </small>
                 </div>
                 <Check size={16} />
               </div>
+              {source && (
+                <>
+                  <label className="field-label" htmlFor="import-mode">
+                    Image type
+                  </label>
+                  <div className="select-wrap">
+                    <select
+                      id="import-mode"
+                      value={importMode}
+                      onChange={(e) => setImportMode(e.target.value)}
+                    >
+                      <option value="auto">Auto · detect chart grid</option>
+                      <option value="pixels">Plain pixel image</option>
+                    </select>
+                    <ChevronDown size={16} />
+                  </div>
+                  <p className="help">
+                    {chart
+                      ? "Chart grid detected. Grid lines and the legend are excluded; each square maps to one bead."
+                      : importMode === "pixels"
+                        ? "The whole image is fitted to your board."
+                        : "No chart grid detected. The whole image is fitted to your board."}
+                  </p>
+                  {chartTooLarge && (
+                    <p className="error" role="alert">
+                      This chart is larger than your board. Only the center is
+                      visible. Select a larger board to see the complete
+                      pattern.
+                    </p>
+                  )}
+                </>
+              )}
               {source && (
                 <button
                   className="text-button"
